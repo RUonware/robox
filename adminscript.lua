@@ -47,6 +47,10 @@ local Hotkey = 't'
 local HotkeyToggle = true
 local CurrentlyPressed = false
 
+local activeSkinName = "Normal"
+local activeSkinAction = nil
+local autoApplyGlobal = false
+
 local flying2 = false
 local BV2, BG2
 
@@ -54,13 +58,124 @@ local infiniteJump = false
 local mobileUp = false
 local mobileDown = false
 
+local tracers = false
+
+local antiRagdoll = false
+local bunnyHop = false
+local spinBot = false
+local infiniteOxygen = false
+local espNames = false
+local espDistance = false
+local aimFOV = 100
+local showFOV = false
+local aimSmoothing = 1
+
+local espActive = false
+local charmActive = false
+local enemyFilter = true
+local teamFilter = false
+
+local enemyColor = Color3.fromRGB(255, 50, 50)
+local teamColor = Color3.fromRGB(50, 255, 50)
+
+local spamMessage = "RUON HACK TEAM ON TOP!"
+local waterPlatform = nil
+local airPlatform = nil
+local lastTrack = nil
+
+local fovCircle = nil
+
 local mobFlyUI = nil
 
 local Mouse = LocalPlayer:GetMouse()
 
 -- =========================
+-- GUI BASE
+-- =========================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "RuonHackGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = PlayerGui
+screenGui.Enabled = false -- Start hidden for device selection
+screenGui.DisplayOrder = 1000
+
+-- =========================
 -- UTILITY FUNCTIONS
 -- =========================
+local function showNotify(txt)
+    local notify = Instance.new("TextLabel", screenGui)
+    notify.Size = UDim2.new(0,300,0,30)
+    notify.Position = UDim2.new(0.5,-150,0,50)
+    notify.BackgroundColor3 = Color3.fromRGB(20,20,25)
+    notify.TextColor3 = Color3.fromRGB(100,255,100)
+    notify.Text = txt
+    notify.Font = Enum.Font.GothamBold
+    notify.TextSize = 14
+    notify.BorderSizePixel = 0
+    Instance.new("UICorner", notify).CornerRadius = UDim.new(0,8)
+    local stroke = Instance.new("UIStroke", notify); stroke.Color = Color3.fromRGB(100,255,100); stroke.Thickness = 1
+
+    task.spawn(function()
+        task.wait(3)
+        for i=0,1,0.1 do
+            notify.BackgroundTransparency = i
+            notify.TextTransparency = i
+            stroke.Transparency = i
+            task.wait(0.05)
+        end
+        notify:Destroy()
+    end)
+end
+
+local function mkToggle(parent, name, defaultVar, callback)
+    local btn = Instance.new("TextButton", parent)
+    btn.Size = UDim2.new(0.95,0,0,36)
+    btn.BackgroundColor3 = Color3.fromRGB(35,35,45)
+    btn.TextColor3 = Color3.fromRGB(240,240,240)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    btn.Text = name .. ": " .. (defaultVar and "Açık" or "Kapalı")
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+    local stroke = Instance.new("UIStroke", btn); stroke.Color = defaultVar and Color3.fromRGB(100,255,100) or Color3.fromRGB(255,100,100); stroke.Thickness = 1
+    
+    btn.MouseButton1Click:Connect(function()
+        local newState = callback()
+        btn.Text = name .. ": " .. (newState and "Açık" or "Kapalı")
+        stroke.Color = newState and Color3.fromRGB(100,255,100) or Color3.fromRGB(255,100,100)
+    end)
+    return btn
+end
+
+local function addMoveControl(parent, name, default, callback)
+    local frame = Instance.new("Frame", parent)
+    frame.Size = UDim2.new(1, -10, 0, 45)
+    frame.BackgroundTransparency = 1
+    
+    local textLabel = Instance.new("TextLabel", frame)
+    textLabel.Size = UDim2.new(0.4, 0, 1, 0)
+    textLabel.Text = name
+    textLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    textLabel.Font = Enum.Font.Gotham
+    textLabel.TextSize = 16
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.BackgroundTransparency = 1
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.5, 0, 0.8, 0)
+    box.Position = UDim2.new(0.45, 0, 0.1, 0)
+    box.Text = tostring(default)
+    box.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+    box.TextColor3 = Color3.fromRGB(240, 240, 240)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 16
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
+
+    box.FocusLost:Connect(function()
+        local val = tonumber(box.Text)
+        if val then callback(val) end
+    end)
+end
+
 local function updateMobFlyUI()
     if deviceMode ~= "Mobil" then return end
     if (flying or flying2) then
@@ -125,16 +240,6 @@ local function updateMobFlyUI()
     end
 end
 
--- =========================
--- GUI CREATION
--- =========================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "RuonHackGui"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = PlayerGui
-screenGui.Enabled = false -- Start hidden for device selection
-screenGui.DisplayOrder = 1000
-
 -- main container (compact)
 local main = Instance.new("Frame", screenGui)
 main.Name = "MainPanel"
@@ -195,7 +300,8 @@ left.Size = UDim2.new(0,140,1,-60)
 left.Position = UDim2.new(0,12,0,56)
 left.BackgroundColor3 = Color3.fromRGB(18,18,20)
 left.BackgroundTransparency = 0.05
-left.CanvasSize = UDim2.new(0,0,0,450) -- Adjust based on content
+left.CanvasSize = UDim2.new(0,0,0,0)
+left.AutomaticCanvasSize = Enum.AutomaticSize.Y
 left.ScrollBarThickness = 2
 left.BorderSizePixel = 0
 Instance.new("UICorner", left).CornerRadius = UDim.new(0,12)
@@ -222,7 +328,7 @@ subtitle.Font = Enum.Font.Gotham
 subtitle.TextSize = 11
 subtitle.TextColor3 = Color3.fromRGB(190,190,200)
 subtitle.TextXAlignment = Enum.TextXAlignment.Left
-subtitle.Text = "Ultra Premium • Glass • RGB Highlights"
+subtitle.Text = "powerd by ru0n"
 
 -- menu button factory (compact)
 local function mkMenuBtn(parent, txt)
@@ -247,10 +353,10 @@ local btnESP = mkMenuBtn(left, "ESP")
 local btnAim = mkMenuBtn(left, "Aimlock")
 local btnTrigger = mkMenuBtn(left, "TriggerBot")
 local btnWorld = mkMenuBtn(left, "World")
-local btnSkins = mkMenuBtn(left, "Skins")
 local btnTeleport = mkMenuBtn(left, "Teleport")
 local btnThemes = mkMenuBtn(left, "Themes")
 local btnMisc = mkMenuBtn(left, "Misc")
+local btnGod = mkMenuBtn(left, "Extra")
 
 -- pages
 local pages = {}
@@ -269,10 +375,10 @@ local pageESP = newPage("ESP")
 local pageAim = newPage("Aim")
 local pageTrigger = newPage("Trigger")
 local pageWorld = newPage("World")
-local pageSkins = newPage("Skins")
 local pageTeleport = newPage("Teleport")
 local pageThemes = newPage("Themes")
 local pageMisc = newPage("Misc")
+local pageGod = newPage("Extra")
 
 local function showPage(name)
     for k,v in pairs(pages) do v.Visible = false end
@@ -288,10 +394,10 @@ btnESP.MouseButton1Click:Connect(function() showPage("ESP") end)
 btnAim.MouseButton1Click:Connect(function() showPage("Aim") end)
 btnTrigger.MouseButton1Click:Connect(function() showPage("Trigger") end)
 btnWorld.MouseButton1Click:Connect(function() showPage("World") end)
-btnSkins.MouseButton1Click:Connect(function() showPage("Skins") end)
 btnTeleport.MouseButton1Click:Connect(function() showPage("Teleport") end)
 btnThemes.MouseButton1Click:Connect(function() showPage("Themes") end)
 btnMisc.MouseButton1Click:Connect(function() showPage("Misc") end)
+btnGod.MouseButton1Click:Connect(function() showPage("Extra") end)
 
 -- =========================
 -- Populate Fly page (controls kept)
@@ -388,7 +494,6 @@ do
     noclipBtn.MouseButton1Click:Connect(function()
         noclip = not noclip
         noclipBtn.Text = "Noclip: "..(noclip and "Açık" or "Kapalı")
-        noclipBtn.Text = "Noclip: "..(noclip and "Açık" or "Kapalı")
     end)
 
     fly2Btn.MouseButton1Click:Connect(function()
@@ -458,18 +563,20 @@ end
 -- =========================
 do
     local scroll = Instance.new("ScrollingFrame", pageESP)
-    scroll.Size = UDim2.new(1,0,1,-40)
-    scroll.Position = UDim2.new(0,0,0,40)
+    scroll.Size = UDim2.new(1,0,1,-10)
+    scroll.Position = UDim2.new(0,0,0,5)
     scroll.BackgroundTransparency = 1
-    scroll.CanvasSize = UDim2.new(0,0,0,200)
+    scroll.CanvasSize = UDim2.new(0,0,0,0)
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     scroll.ScrollBarThickness = 2
     scroll.BorderSizePixel = 0
 
     local layout = Instance.new("UIListLayout", scroll)
     layout.Padding = UDim.new(0,8)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
     local espToggleBtn = Instance.new("TextButton", scroll)
-    espToggleBtn.Size = UDim2.new(0,200,0,38)
+    espToggleBtn.Size = UDim2.new(0.95,0,0,38)
     espToggleBtn.Text = "ESP: Kapalı"
     espToggleBtn.Font = Enum.Font.GothamBold
     espToggleBtn.TextSize = 16
@@ -477,7 +584,7 @@ do
     Instance.new("UICorner", espToggleBtn).CornerRadius = UDim.new(0,8)
 
     local charmBtn = Instance.new("TextButton", scroll)
-    charmBtn.Size = UDim2.new(0,200,0,38)
+    charmBtn.Size = UDim2.new(0.95,0,0,38)
     charmBtn.Text = "Charm: Kapalı"
     charmBtn.Font = Enum.Font.GothamBold
     charmBtn.TextSize = 16
@@ -485,7 +592,7 @@ do
     Instance.new("UICorner", charmBtn).CornerRadius = UDim.new(0,8)
 
     local enemyFilterBtn = Instance.new("TextButton", scroll)
-    enemyFilterBtn.Size = UDim2.new(0,200,0,38)
+    enemyFilterBtn.Size = UDim2.new(0.95,0,0,38)
     enemyFilterBtn.Text = "only enemy: Açık"
     enemyFilterBtn.Font = Enum.Font.GothamBold
     enemyFilterBtn.TextSize = 16
@@ -493,17 +600,13 @@ do
     Instance.new("UICorner", enemyFilterBtn).CornerRadius = UDim.new(0,8)
 
     local teamFilterBtn = Instance.new("TextButton", scroll)
-    teamFilterBtn.Size = UDim2.new(0,200,0,38)
+    teamFilterBtn.Size = UDim2.new(0.95,0,0,38)
     teamFilterBtn.Text = "only team: Kapalı"
     teamFilterBtn.Font = Enum.Font.GothamBold
     teamFilterBtn.TextSize = 16
     teamFilterBtn.BackgroundColor3 = Color3.fromRGB(30,30,35)
     Instance.new("UICorner", teamFilterBtn).CornerRadius = UDim.new(0,8)
 
-    local espActive = false
-    local charmActive = false
-    local enemyFilter = true
-    local teamFilter = false
     local espBoxes = {}
 
     local function clearESP()
@@ -535,8 +638,10 @@ do
                         box.Transparency = 0.4
                         box.AlwaysOnTop = true
                         box.ZIndex = 10
-                        -- Renk: Duvar arkası kırmızı, görünür yeşil
-                        box.Color3 = isVisible(hrp) and Color3.fromRGB(0,255,0) or Color3.fromRGB(255,0,0)
+                        -- Renk: Duvar arkası seçili renk, görünür olduğunda parlak
+                        box.Color3 = enemyColor
+                        if plr.Team == LocalPlayer.Team then box.Color3 = teamColor end
+                        
                         if charmActive then
                             box.Color3 = Color3.fromRGB(255,0,255)
                         end
@@ -562,39 +667,87 @@ do
 
     enemyFilterBtn.MouseButton1Click:Connect(function()
         enemyFilter = not enemyFilter
-        enemyFilterBtn.Text = "Enemy Filter: "..(enemyFilter and "Açık" or "Kapalı")
+        enemyFilterBtn.Text = "only enemy: "..(enemyFilter and "Açık" or "Kapalı")
         updateESP()
     end)
 
     teamFilterBtn.MouseButton1Click:Connect(function()
         teamFilter = not teamFilter
-        teamFilterBtn.Text = "Team Filter: "..(teamFilter and "Açık" or "Kapalı")
+        teamFilterBtn.Text = "only team: "..(teamFilter and "Açık" or "Kapalı")
         updateESP()
     end)
 
+    mkToggle(scroll, "ESP Isimleri", espNames, function() espNames = not espNames; return espNames end)
+    mkToggle(scroll, "ESP Mesafe", espDistance, function() espDistance = not espDistance; return espDistance end)
+
+    -- Color Selection UI
+    local function addColorSection(title, targetVar, setter)
+        local lbl = Instance.new("TextLabel", scroll)
+        lbl.Size = UDim2.new(1,0,0,24)
+        lbl.Text = "  " .. title
+        lbl.TextColor3 = Color3.fromRGB(180,180,180)
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 13
+        lbl.BackgroundTransparency = 1
+
+        local frame = Instance.new("Frame", scroll)
+        frame.Size = UDim2.new(1,0,0,80)
+        frame.BackgroundTransparency = 1
+        
+        local grid = Instance.new("UIGridLayout", frame)
+        grid.CellSize = UDim2.new(0,36,0,36)
+        grid.CellPadding = UDim2.new(0,6,0,6)
+        grid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+        local colors = {
+            Color3.fromRGB(255,0,0), Color3.fromRGB(0,255,0), Color3.fromRGB(0,0,255),
+            Color3.fromRGB(255,255,0), Color3.fromRGB(255,0,255), Color3.fromRGB(0,255,255),
+            Color3.fromRGB(255,165,0), Color3.fromRGB(255,255,255), Color3.fromRGB(50,50,50)
+        }
+
+        for _,col in ipairs(colors) do
+            local b = Instance.new("TextButton", frame)
+            b.Text = ""
+            b.BackgroundColor3 = col
+            Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+            local s = Instance.new("UIStroke", b); s.Thickness = 1; s.Color = Color3.fromRGB(255,255,255); s.Transparency = 1
+            
+            b.MouseButton1Click:Connect(function()
+                setter(col)
+                showNotify(title .. " Rengi Güncellendi")
+                updateESP()
+            end)
+        end
+    end
+
+    addColorSection("Düşman ESP Rengi", enemyColor, function(c) enemyColor = c end)
+    addColorSection("Takım ESP Rengi", teamColor, function(c) teamColor = c end)
+
     Players.PlayerAdded:Connect(function(plr)
-        plr.CharacterAdded:Connect(function() task.wait(0.3); updateESP() end)
+        plr.CharacterAdded:Connect(function() task.wait(0.3) end)
     end)
-    Players.PlayerRemoving:Connect(function(plr) updateESP() end)
 end
 
 -- =========================
 -- Populate Aim page (aimlock)
 -- =========================
 do
-    local lbl = Instance.new("TextLabel", pageAim)
-    lbl.Size = UDim2.new(1,0,0,28)
-    lbl.Position = UDim2.new(0,0,0,4)
-    lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextSize = 16
-    lbl.Text = "Aimlock"
-    lbl.TextColor3 = Color3.fromRGB(240,240,240)
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    local scroll = Instance.new("ScrollingFrame", pageAim)
+    scroll.Size = UDim2.new(1,0,1,-10)
+    scroll.Position = UDim2.new(0,0,0,5)
+    scroll.BackgroundTransparency = 1
+    scroll.CanvasSize = UDim2.new(0,0,0,0)
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.ScrollBarThickness = 2
+    scroll.BorderSizePixel = 0
 
-    local aimBtn = Instance.new("TextButton", pageAim)
+    local layout = Instance.new("UIListLayout", scroll)
+    layout.Padding = UDim.new(0,8)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+    local aimBtn = Instance.new("TextButton", scroll)
     aimBtn.Size = UDim2.new(0,220,0,36)
-    aimBtn.Position = UDim2.new(0,0,0,40)
     aimBtn.Text = "Aimlock: "..aimModes[aimIndex]
     aimBtn.Font = Enum.Font.GothamBold
     aimBtn.TextSize = 16
@@ -637,7 +790,9 @@ do
         if aimIndex ~= 1 then
             local targetHead = getClosestTarget()
             if targetHead then
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+                local currentCF = Camera.CFrame
+                local targetCF = CFrame.new(currentCF.Position, targetHead.Position)
+                Camera.CFrame = currentCF:Lerp(targetCF, 1/aimSmoothing)
             end
         end
     end)
@@ -646,6 +801,15 @@ do
         aimIndex = aimIndex % #aimModes + 1
         aimBtn.Text = "Aimlock: "..aimModes[aimIndex]
     end)
+
+    mkToggle(scroll, "Aim FOV Goster", showFOV, function() 
+        showFOV = not showFOV
+        if fovCircle then fovCircle.Visible = showFOV end
+        return showFOV 
+    end)
+
+    addMoveControl(scroll, "Aim FOV Boyutu", 100, function(v) aimFOV = v end)
+    addMoveControl(scroll, "Aim Yumusaklik", 1, function(v) aimSmoothing = v end)
 end
 
 -- =========================
@@ -724,6 +888,20 @@ do
     lbl.TextColor3 = Color3.fromRGB(240,240,240)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
 
+    local scroll = Instance.new("ScrollingFrame", pageWorld)
+    scroll.Size = UDim2.new(1,0,1,-40)
+    scroll.Position = UDim2.new(0,0,0,40)
+    scroll.BackgroundTransparency = 1
+    scroll.CanvasSize = UDim2.new(0,0,0,0)
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.ScrollBarThickness = 2
+    scroll.BorderSizePixel = 0
+    
+    local grid = Instance.new("UIGridLayout", scroll)
+    grid.CellSize = UDim2.new(0,105,0,34)
+    grid.CellPadding = UDim2.new(0,8,0,8)
+    grid.SortOrder = Enum.SortOrder.LayoutOrder
+
     local colors = {
         {Name="Mavi", Col=Color3.fromRGB(0,120,255)},
         {Name="Kırmızı", Col=Color3.fromRGB(255,60,60)},
@@ -737,13 +915,11 @@ do
         {Name="Siyah", Col=Color3.fromRGB(0,0,0)},
     }
 
-    for i,data in ipairs(colors) do
-        local btn = Instance.new("TextButton", pageWorld)
-        btn.Size = UDim2.new(0,110,0,36)
-        btn.Position = UDim2.new(0, (i-1)*116, 0, 40)
+    for _,data in ipairs(colors) do
+        local btn = Instance.new("TextButton", scroll)
         btn.Text = data.Name
         btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 16
+        btn.TextSize = 14
         btn.BackgroundColor3 = Color3.fromRGB(30,30,35)
         btn.TextColor3 = Color3.fromRGB(240,240,240)
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
@@ -756,14 +932,14 @@ do
         end)
     end
 
-    -- Scroll adjustment for many buttons
-    local grid = Instance.new("UIGridLayout", pageWorld)
-    grid.CellSize = UDim2.new(0,110,0,38) -- Increased size
-    grid.CellPadding = UDim2.new(0,8,0,8)
-    grid.SortOrder = Enum.SortOrder.LayoutOrder
-    
-    local pad = Instance.new("UIPadding", pageWorld)
-    pad.PaddingTop = UDim.new(0,40)
+    mkToggle(scroll, "FPS Boost (Doku Sil)", false, function()
+        for _,v in pairs(game:GetDescendants()) do
+            if v:IsA("Texture") or v:IsA("Decal") then
+                v:Destroy()
+            end
+        end
+        return true
+    end)
 end
 
 -- =========================
@@ -796,6 +972,15 @@ do
             main.BackgroundColor3 = Color3.fromRGB(25,25,25)
         end
     end)
+
+    mkToggle(pageMisc, "Spinbot", spinBot, function() spinBot = not spinBot; return spinBot end)
+    
+    mkToggle(pageMisc, "Server Hopper", false, function()
+        local ts = game:GetService("TeleportService")
+        local gid = game.PlaceId
+        ts:Teleport(gid, LocalPlayer)
+        return true
+    end)
 end
 
 -- =========================
@@ -822,50 +1007,24 @@ do
     local layout = Instance.new("UIListLayout", scroll)
     layout.Padding = UDim.new(0,8)
 
-    local function addMoveControl(name, default, callback)
-        local frame = Instance.new("Frame", scroll)
-        frame.Size = UDim2.new(1, -10, 0, 45)
-        frame.BackgroundTransparency = 1
-        
-        local textLabel = Instance.new("TextLabel", frame)
-        textLabel.Size = UDim2.new(0.4, 0, 1, 0)
-        textLabel.Text = name
-        textLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        textLabel.Font = Enum.Font.Gotham
-        textLabel.TextSize = 16
-        textLabel.TextXAlignment = Enum.TextXAlignment.Left
-        textLabel.BackgroundTransparency = 1
 
-        local box = Instance.new("TextBox", frame)
-        box.Size = UDim2.new(0.5, 0, 0.8, 0)
-        box.Position = UDim2.new(0.45, 0, 0.1, 0)
-        box.Text = tostring(default)
-        box.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        box.TextColor3 = Color3.fromRGB(240, 240, 240)
-        box.Font = Enum.Font.Gotham
-        box.TextSize = 16
-        Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
-
-        box.FocusLost:Connect(function()
-            local val = tonumber(box.Text)
-            if val then callback(val) end
-        end)
-    end
-
-    addMoveControl("Yürüme Hızı", 16, function(v)
+    addMoveControl(scroll, "Yürüme Hızı", 16, function(v)
         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
             LocalPlayer.Character.Humanoid.WalkSpeed = v
         end
     end)
 
-    addMoveControl("Zıplama Gücü", 50, function(v)
+    addMoveControl(scroll, "Zıplama Gücü", 50, function(v)
         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
             LocalPlayer.Character.Humanoid.JumpPower = v
             LocalPlayer.Character.Humanoid.UseJumpPower = true
         end
     end)
 
-    addMoveControl("Yerçekimi", workspace.Gravity, function(v)
+    mkToggle(scroll, "Anti-Ragdoll", antiRagdoll, function() antiRagdoll = not antiRagdoll; return antiRagdoll end)
+    mkToggle(scroll, "BunnyHop", bunnyHop, function() bunnyHop = not bunnyHop; return bunnyHop end)
+
+    addMoveControl(scroll, "Yerçekimi", workspace.Gravity, function(v)
         workspace.Gravity = v
     end)
 
@@ -894,7 +1053,7 @@ do
     lbl.BackgroundTransparency = 1
     lbl.Font = Enum.Font.GothamBold
     lbl.TextSize = 18
-    lbl.Text = "Teleport Players"
+    lbl.Text = "Teleports"
     lbl.TextColor3 = Color3.fromRGB(240,240,240)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -903,18 +1062,46 @@ do
     scroll.Position = UDim2.new(0,0,0,40)
     scroll.BackgroundTransparency = 1
     scroll.CanvasSize = UDim2.new(0,0,0,0)
-    scroll.ScrollBarThickness = 4
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.ScrollBarThickness = 2
+    scroll.BorderSizePixel = 0
 
     local layout = Instance.new("UIListLayout", scroll)
     layout.Padding = UDim.new(0,6)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+    -- Random TP Button
+    local randBtn = Instance.new("TextButton", scroll)
+    randBtn.Size = UDim2.new(0.95,0,0,38)
+    randBtn.BackgroundColor3 = Color3.fromRGB(45,35,50)
+    randBtn.Text = "🎲 Rastgele Oyuncuya Işınlan"
+    randBtn.Font = Enum.Font.GothamBold
+    randBtn.TextSize = 14
+    randBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    Instance.new("UICorner", randBtn).CornerRadius = UDim.new(0,8)
+    
+    randBtn.MouseButton1Click:Connect(function()
+        local plrs = Players:GetPlayers()
+        if #plrs <= 1 then showNotify("Işınlanacak başka oyuncu yok!"); return end
+        local targetPlr
+        repeat targetPlr = plrs[math.random(1, #plrs)] until targetPlr ~= LocalPlayer
+        
+        if targetPlr.Character and targetPlr.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = targetPlr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
+                showNotify("Işınlanıldı: " .. targetPlr.Name)
+            end
+        end
+    end)
 
     local function makeTpEntry(plr)
         local btn = Instance.new("TextButton", scroll)
-        btn.Size = UDim2.new(1,-10,0,32)
+        btn.Size = UDim2.new(0.95,0,0,34)
         btn.BackgroundColor3 = Color3.fromRGB(35,35,40)
-        btn.Text = "TP to: "..plr.Name
+        btn.Text = "Işınlan: "..plr.Name
         btn.Font = Enum.Font.Gotham
-        btn.TextSize = 15
+        btn.TextSize = 14
         btn.TextColor3 = Color3.fromRGB(230,230,230)
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
 
@@ -923,19 +1110,18 @@ do
             local targetHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
             if hrp and targetHRP then
                 hrp.CFrame = targetHRP.CFrame + Vector3.new(0,3,0)
+                showNotify("Işınlanıldı: " .. plr.Name)
             end
         end)
     end
 
     local function refreshTP()
-        for _,c in ipairs(scroll:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
-        local count = 0
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                makeTpEntry(p); count = count + 1
-            end
+        for _,c in ipairs(scroll:GetChildren()) do 
+            if c:IsA("TextButton") and c ~= randBtn then c:Destroy() end 
         end
-        scroll.CanvasSize = UDim2.new(0,0,0, count * 38)
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then makeTpEntry(p) end
+        end
     end
 
     Players.PlayerAdded:Connect(refreshTP)
@@ -1006,158 +1192,6 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 
--- =========================
--- Skin Changer page + Warning Notification
--- =========================
-do
-    local function showNotify(txt)
-        local notify = Instance.new("TextLabel", screenGui)
-        notify.Size = UDim2.new(0,300,0,30)
-        notify.Position = UDim2.new(0.5,-150,0,50)
-        notify.BackgroundColor3 = Color3.fromRGB(20,20,25)
-        notify.TextColor3 = Color3.fromRGB(255,200,50)
-        notify.Text = "⚠ "..txt
-        notify.Font = Enum.Font.GothamBold
-        notify.TextSize = 14
-        notify.BorderSizePixel = 0
-        local corner = Instance.new("UICorner", notify); corner.CornerRadius = UDim.new(0,8)
-        local stroke = Instance.new("UIStroke", notify); stroke.Color = Color3.fromRGB(255,200,50); stroke.Thickness = 1
-
-        task.spawn(function()
-            task.wait(3)
-            for i=0,1,0.1 do
-                notify.BackgroundTransparency = i
-                notify.TextTransparency = i
-                stroke.Transparency = i
-                task.wait(0.05)
-            end
-            notify:Destroy()
-        end)
-    end
-
-    local lbl = Instance.new("TextLabel", pageSkins)
-    lbl.Size = UDim2.new(1,0,0,28)
-    lbl.Position = UDim2.new(0,0,0,4)
-    lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextSize = 16
-    lbl.Text = "Skin Changer"
-    lbl.TextColor3 = Color3.fromRGB(240,240,240)
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    local sub = Instance.new("TextLabel", pageSkins)
-    sub.Size = UDim2.new(1,0,0,20)
-    sub.Position = UDim2.new(0,0,0,28)
-    sub.BackgroundTransparency = 1
-    sub.Font = Enum.Font.Gotham
-    sub.TextSize = 12
-    sub.Text = "Sadece sizde görünür!"
-    sub.TextColor3 = Color3.fromRGB(255,100,100)
-    sub.TextXAlignment = Enum.TextXAlignment.Left
-
-    local skins = {
-        {Name="Neon Full", Action=function()
-            local char = LocalPlayer.Character
-            if not char then return end
-            for _,p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") then
-                    p.Material = Enum.Material.Neon
-                    p.Color = Color3.fromRGB(0, 255, 255)
-                end
-            end
-        end},
-        {Name="Zombi", Action=function()
-            local char = LocalPlayer.Character
-            if not char then return end
-            for _,p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") and p.Name:lower():find("skin") or p.Name:lower():find("arm") or p.Name:lower():find("leg") or p.Name:lower():find("head") or p.Name:lower():find("torso") then
-                    p.Color = Color3.fromRGB(50, 100, 50)
-                end
-            end
-        end},
-        {Name="Altın", Action=function()
-            local char = LocalPlayer.Character
-            if not char then return end
-            for _,p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") then
-                    p.Material = Enum.Material.Metal
-                    p.Color = Color3.fromRGB(255, 215, 0)
-                end
-            end
-        end},
-        {Name="Hayalet", Action=function()
-            local char = LocalPlayer.Character
-            if not char then return end
-            for _,p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") then
-                    p.Transparency = 0.5
-                end
-            end
-        end},
-        {Name="Ateşli", Action=function()
-            local char = LocalPlayer.Character
-            if not char then return end
-            for _,p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") then
-                    local f = Instance.new("Fire", p)
-                    f.Size = 5
-                end
-            end
-        end},
-        {Name="Işıltılı", Action=function()
-            local char = LocalPlayer.Character
-            if not char then return end
-            for _,p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") then
-                    Instance.new("Sparkles", p)
-                end
-            end
-        end},
-        {Name="Dumanlı", Action=function()
-            local char = LocalPlayer.Character
-            if not char then return end
-            for _,p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") then
-                    Instance.new("Smoke", p)
-                end
-            end
-        end},
-        {Name="Kalkan", Action=function()
-            local char = LocalPlayer.Character
-            if not char then return end
-            Instance.new("ForceField", char)
-        end},
-        {Name="Normal", Action=function()
-            -- Bu sadece yerel bir deneme olduğu için karakteri yenilemek en iyisidir
-            LocalPlayer:LoadCharacter()
-        end}
-    }
-
-    local skinGrid = Instance.new("UIGridLayout", pageSkins)
-    skinGrid.CellSize = UDim2.new(0,130,0,38)
-    skinGrid.CellPadding = UDim2.new(0,10,0,10)
-    skinGrid.SortOrder = Enum.SortOrder.LayoutOrder
-
-    -- Padding for grid
-    local pad = Instance.new("UIPadding", pageSkins)
-    pad.PaddingTop = UDim.new(0,60)
-
-    for _,data in ipairs(skins) do
-        local btn = Instance.new("TextButton", pageSkins)
-        btn.Text = data.Name
-        btn.BackgroundColor3 = Color3.fromRGB(35,35,40)
-        btn.TextColor3 = Color3.fromRGB(230,230,230)
-        btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 16
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
-
-        btn.MouseButton1Click:Connect(function()
-            showNotify("Sadece sende görünür!")
-            task.wait(0.5)
-            data.Action()
-        end)
-    end
-end
 
 -- =========================
 -- Shared runtime: Fly movement, noclip, rainbow background, aim/esp updates
@@ -1266,6 +1300,235 @@ RunService.RenderStepped:Connect(function()
             end
         end
     end
+
+    -- GOD MODE FEATURES RUNTIME
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+
+
+    -- Walk on Water
+    if walkOnWater and hrp then
+        local ray = Ray.new(hrp.Position, Vector3.new(0,-6,0))
+        local hit, pos = workspace:FindPartOnRayWithIgnoreList(ray, {char})
+        if hit and (hit.Name == "Water" or hit:IsA("Terrain")) then
+            if not waterPlatform then
+                waterPlatform = Instance.new("Part", workspace)
+                waterPlatform.Size = Vector3.new(10, 0.2, 10)
+                waterPlatform.Transparency = 1
+                waterPlatform.Anchored = true
+                waterPlatform.CanCollide = true
+            end
+            waterPlatform.CFrame = CFrame.new(hrp.Position.X, hit.Position.Y + hit.Size.Y/2 + 0.1, hrp.Position.Z)
+        else
+            if waterPlatform then waterPlatform:Destroy(); waterPlatform = nil end
+        end
+    end
+
+    -- Walk on Air
+    if walkOnAir and hrp then
+        if not airPlatform then
+            airPlatform = Instance.new("Part", workspace)
+            airPlatform.Size = Vector3.new(10, 0.2, 10)
+            airPlatform.Transparency = 1
+            airPlatform.Anchored = true
+        end
+        airPlatform.CFrame = CFrame.new(hrp.Position.X, hrp.Position.Y - 3.1, hrp.Position.Z)
+    elseif airPlatform then
+        airPlatform:Destroy(); airPlatform = nil
+    end
+
+    -- Auto Clicker
+    if autoClicker then
+        safe_mouse1click()
+    end
+
+    -- BHOP
+    if bunnyHop and UserInputService:IsKeyDown(Enum.KeyCode.Space) and not UserInputService:GetFocusedTextBox() then
+        if hum and hum.FloorMaterial ~= Enum.Material.Air then
+            hum.Jump = true
+        end
+    end
+
+    -- Anti-Ragdoll
+    if antiRagdoll and hum then
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    elseif hum then
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+    end
+
+    -- Infinite Oxygen
+    if infiniteOxygen and hum then
+        LocalPlayer.Character:SetAttribute("Oxygen", 100)
+    end
+
+    -- Spinbot
+    if spinBot and hrp then
+        hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(20), 0)
+    end
+
+    -- FOV Circle Drawing
+    if showFOV then
+        if not fovCircle then
+            fovCircle = Drawing.new("Circle")
+            fovCircle.Visible = true
+            fovCircle.Transparency = 1
+            fovCircle.Color = Color3.fromRGB(255, 255, 255)
+            fovCircle.Thickness = 1
+        end
+        fovCircle.Position = UserInputService:GetMouseLocation()
+        fovCircle.Radius = aimFOV
+    elseif fovCircle then
+        fovCircle.Visible = false
+    end
+
+    -- Real-time ESP (Names/Dist)
+    if espActive then
+        local espFolder = Workspace:FindFirstChild("RuonESP") or Instance.new("Folder", Workspace)
+        espFolder.Name = "RuonESP"
+        
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local char = p.Character
+                local hrp_p = char.HumanoidRootPart
+                local head = char:FindFirstChild("Head")
+                
+                local name = p.Name
+                local dist = math.floor((hrp.Position - hrp_p.Position).Magnitude)
+                
+                local tag = char:FindFirstChild("RuonTag") or Instance.new("BillboardGui", char)
+                tag.Name = "RuonTag"
+                tag.Size = UDim2.new(0, 100, 0, 50)
+                tag.Adornee = head
+                tag.AlwaysOnTop = true
+                tag.ExtentsOffset = Vector3.new(0, 3, 0)
+                
+                local lbl = tag:FindFirstChild("TextLabel") or Instance.new("TextLabel", tag)
+                lbl.Size = UDim2.new(1, 0, 1, 0)
+                lbl.BackgroundTransparency = 1
+                lbl.TextColor3 = (p.Team ~= LocalPlayer.Team) and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(50, 255, 50)
+                lbl.Font = Enum.Font.GothamBold
+                lbl.TextSize = 12
+                
+                local text = ""
+                if espNames then text = text .. name .. " " end
+                if espDistance then text = text .. "[" .. dist .. "m]" end
+                lbl.Text = text
+                
+                local isEnemy = p.Team ~= LocalPlayer.Team
+                local isTeam = p.Team == LocalPlayer.Team
+                local filterPass = (enemyFilter and isEnemy) or (teamFilter and isTeam)
+                
+                lbl.TextColor3 = isEnemy and enemyColor or teamColor
+                lbl.Visible = (espNames or espDistance) and filterPass
+            end
+        end
+    else
+        local espFolder = Workspace:FindFirstChild("RuonESP")
+        if espFolder then espFolder:Destroy() end
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("RuonTag") then
+                p.Character.RuonTag:Destroy()
+            end
+        end
+    end
+
+        -- Tracers (Drawing API)
+    if tracers then
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = p.Character.HumanoidRootPart
+                local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                if onScreen then
+                     -- We use a simple LineHandleAdornment approach since managing Drawing objects in this loop structure is complex without a pool
+                     -- Alternatively, check if line exists
+                     local line = p.Character:FindFirstChild("RuonTracer")
+                     if not line then 
+                         line = Instance.new("LineHandleAdornment", p.Character)
+                         line.Name = "RuonTracer"
+                         line.Adornee = workspace.Terrain
+                         line.ZIndex = 0
+                         line.AlwaysOnTop = true
+                         line.Transparency = 0.3
+                         line.Thickness = 2
+                     end
+                     
+                     line.Color3 = (p.Team == LocalPlayer.Team) and teamColor or enemyColor
+                     line.Length = (hrp.Position - Camera.CFrame.Position).Magnitude
+                     line.CFrame = CFrame.lookAt(Camera.CFrame.Position, hrp.Position)
+                     line.Visible = true
+                elseif p.Character:FindFirstChild("RuonTracer") then
+                    p.Character.RuonTracer.Visible = false
+                end
+            elseif p.Character and p.Character:FindFirstChild("RuonTracer") then
+                 p.Character.RuonTracer.Visible = false
+            end
+        end
+    else
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("RuonTracer") then
+                p.Character.RuonTracer:Destroy()
+            end
+        end
+    end
+end)
+
+-- Anti-AFK
+local VirtualUser = game:GetService("VirtualUser")
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
+
+-- Click TP
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if clickTP and input.UserInputType == Enum.UserInputType.MouseButton1 and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and Mouse.Target then
+            hrp.CFrame = CFrame.new(Mouse.Hit.p) * CFrame.new(0, 3, 0)
+        end
+    end
+end)
+
+-- Chat Spammer Loop
+task.spawn(function()
+    while true do
+        if chatSpammer and spamMessage ~= "" then
+            local chat = game:GetService("TextChatService")
+            if chat.ChatVersion == Enum.ChatVersion.TextChatService then
+                local channel = chat.TextChannels.RBXGeneral
+                channel:SendAsync(spamMessage)
+            else
+                game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(spamMessage, "All")
+            end
+        end
+        task.wait(2) -- Prevent too fast spam
+    end
+end)
+
+-- Instant Interaction (Global hook)
+game.DescendantAdded:Connect(function(d)
+    if instantInteraction and d:IsA("ProximityPrompt") then
+        d.HoldDuration = 0
+    end
+end)
+
+-- No Fall Damage & Visuals Persistence
+LocalPlayer.CharacterAdded:Connect(function(char)
+    local hum = char:WaitForChild("Humanoid")
+    
+    -- No Fall Damage
+    hum.StateChanged:Connect(function(old, new)
+        if noFallDamage and (new == Enum.HumanoidStateType.FallingDown or new == Enum.HumanoidStateType.Freefall) then
+            task.wait(0.1)
+        end
+    end)
+
+-- Persistence Removed
 end)
 
 -- =========================
@@ -1473,5 +1736,101 @@ do
     btnMob.MouseButton1Click:Connect(function() finalize("Mobil") end)
 end
 
--- Final: print to console to confirm injection
-print("[Ruon] Premium GUI injected — bölmeli, kompakt ve hazır.")
+
+-- =========================
+-- God Mode Page
+-- =========================
+do
+    local scroll = Instance.new("ScrollingFrame", pageGod)
+    scroll.Size = UDim2.new(1,0,1,-10)
+    scroll.Position = UDim2.new(0,0,0,5)
+    scroll.BackgroundTransparency = 1
+    scroll.CanvasSize = UDim2.new(0,0,0,0)
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.ScrollBarThickness = 2
+    scroll.BorderSizePixel = 0
+    
+    local layout = Instance.new("UIListLayout", scroll)
+    layout.Padding = UDim.new(0,6)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+    mkToggle(scroll, "Tracers (Lines)", tracers, function() tracers = not tracers; return tracers end)
+    mkToggle(scroll, "No Fall Damage", noFallDamage, function() noFallDamage = not noFallDamage; return noFallDamage end)
+    mkToggle(scroll, "Anti-AFK", true, function() return true end)
+    
+    mkToggle(scroll, "Su Üstünde Yürüme", walkOnWater, function() 
+        walkOnWater = not walkOnWater
+        if not walkOnWater and waterPlatform then waterPlatform:Destroy(); waterPlatform = nil end
+        return walkOnWater 
+    end)
+    
+    mkToggle(scroll, "Havada Yürüme", walkOnAir, function() 
+        walkOnAir = not walkOnAir
+        if not walkOnAir and airPlatform then airPlatform:Destroy(); airPlatform = nil end
+        return walkOnAir 
+    end)
+    
+    mkToggle(scroll, "Click Teleport (Ctrl+Click)", clickTP, function() clickTP = not clickTP; return clickTP end)
+    mkToggle(scroll, "Fullbright", fullBright, function() 
+        fullBright = not fullBright
+        if fullBright then
+            Lighting.Brightness = 2
+            Lighting.ClockTime = 14
+            Lighting.FogEnd = 100000
+            Lighting.GlobalShadows = false
+            Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+        else
+            Lighting.Brightness = 1
+            Lighting.GlobalShadows = true
+            Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
+        end
+        return fullBright 
+    end)
+    
+    mkToggle(scroll, "Auto Clicker", autoClicker, function() autoClicker = not autoClicker; return autoClicker end)
+    
+    -- Chat Spammer Section
+    local spamFrame = Instance.new("Frame", scroll)
+    spamFrame.Size = UDim2.new(0.95,0,0,70)
+    spamFrame.BackgroundTransparency = 1
+    
+    local spamBox = Instance.new("TextBox", spamFrame)
+    spamBox.Size = UDim2.new(1,0,0,30)
+    spamBox.Position = UDim2.new(0,0,0,0)
+    spamBox.BackgroundColor3 = Color3.fromRGB(25,25,30)
+    spamBox.TextColor3 = Color3.fromRGB(240,240,240)
+    spamBox.Text = spamMessage
+    spamBox.PlaceholderText = "Spam Mesajı..."
+    Instance.new("UICorner", spamBox).CornerRadius = UDim.new(0,6)
+    spamBox.FocusLost:Connect(function() spamMessage = spamBox.Text end)
+    
+    local spamToggleBtn = Instance.new("TextButton", spamFrame)
+    spamToggleBtn.Size = UDim2.new(1,0,0,34)
+    spamToggleBtn.Position = UDim2.new(0,0,0,36)
+    spamToggleBtn.BackgroundColor3 = Color3.fromRGB(35,35,45)
+    spamToggleBtn.Text = "Chat Spammer: Kapalı"
+    spamToggleBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    spamToggleBtn.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", spamToggleBtn).CornerRadius = UDim.new(0,8)
+    local spamStroke = Instance.new("UIStroke", spamToggleBtn); spamStroke.Color = Color3.fromRGB(255,100,100); spamStroke.Thickness = 1
+    
+    spamToggleBtn.MouseButton1Click:Connect(function()
+        chatSpammer = not chatSpammer
+        spamToggleBtn.Text = "Chat Spammer: " .. (chatSpammer and "Açık" or "Kapalı")
+        spamStroke.Color = chatSpammer and Color3.fromRGB(100,255,100) or Color3.fromRGB(255,100,100)
+    end)
+
+    mkToggle(scroll, "Instant Interact", instantInteraction, function() 
+        instantInteraction = not instantInteraction
+        if instantInteraction then
+            for _,v in pairs(game:GetDescendants()) do
+                if v:IsA("ProximityPrompt") then v.HoldDuration = 0 end
+            end
+        end
+        return instantInteraction 
+    end)
+    
+    mkToggle(scroll, "Infinite Oxygen", infiniteOxygen, function() infiniteOxygen = not infiniteOxygen; return infiniteOxygen end)
+end
+
+print("[Ruon] Premium GUI injected — God Mode, Movement, ESP & Aim hazır.")
