@@ -1,6 +1,6 @@
 -- RUON: COMBINED FULL PANEL (BÖLMELİ, TAŞMA YOK, ÖZELLİKLER KORUNDU)
 -- Tek dosya — yapıştırıp çalıştır
-
+print("yüklendii")
 -- Services & basic refs (kept names similar to original)
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -897,10 +897,27 @@ do
     scroll.ScrollBarThickness = 2
     scroll.BorderSizePixel = 0
     
-    local grid = Instance.new("UIGridLayout", scroll)
+    -- Main List Layout for the page
+    local listLayout = Instance.new("UIListLayout", scroll)
+    listLayout.Padding = UDim.new(0,12)
+    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+    local pad = Instance.new("UIPadding", scroll)
+    pad.PaddingTop = UDim.new(0, 5)
+    pad.PaddingBottom = UDim.new(0, 5)
+
+    -- CONTAINER FOR COLOR GRID
+    local colorContainer = Instance.new("Frame", scroll)
+    colorContainer.Size = UDim2.new(1, -10, 0, 150) -- Adjusted height to fit grid
+    colorContainer.BackgroundTransparency = 1
+    colorContainer.LayoutOrder = 1
+    
+    local grid = Instance.new("UIGridLayout", colorContainer)
     grid.CellSize = UDim2.new(0,105,0,34)
     grid.CellPadding = UDim2.new(0,8,0,8)
     grid.SortOrder = Enum.SortOrder.LayoutOrder
+    grid.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
     local colors = {
         {Name="Mavi", Col=Color3.fromRGB(0,120,255)},
@@ -916,7 +933,7 @@ do
     }
 
     for _,data in ipairs(colors) do
-        local btn = Instance.new("TextButton", scroll)
+        local btn = Instance.new("TextButton", colorContainer)
         btn.Text = data.Name
         btn.Font = Enum.Font.GothamBold
         btn.TextSize = 14
@@ -931,15 +948,153 @@ do
             Lighting.ColorShift_Bottom = data.Col
         end)
     end
+    
+    -- OTHER CONTROLS (Vertical Stack)
 
+    -- FPS Boost (Optimized)
     mkToggle(scroll, "FPS Boost (Doku Sil)", false, function()
-        for _,v in pairs(game:GetDescendants()) do
-            if v:IsA("Texture") or v:IsA("Decal") then
-                v:Destroy()
-            end
-        end
+        task.spawn(function()
+             local count = 0
+             for _,v in pairs(game:GetDescendants()) do
+                 if v:IsA("Texture") or v:IsA("Decal") then
+                     v:Destroy()
+                 end
+                 count = count + 1
+                 if count % 500 == 0 then task.wait() end -- Prevent crash
+             end
+             showNotify("FPS Boost Tamamlandı")
+        end)
         return true
     end)
+
+    -- FOV Control
+    addMoveControl(scroll, "FOV (Bakış Açısı)", workspace.CurrentCamera.FieldOfView, function(v)
+        workspace.CurrentCamera.FieldOfView = v
+    end)
+
+    -- Skybox Control Section
+    local skyFrame = Instance.new("Frame", scroll)
+    skyFrame.Size = UDim2.new(1,-10,0,65)
+    skyFrame.BackgroundTransparency = 1
+    skyFrame.LayoutOrder = 10
+    
+    local skyLb = Instance.new("TextLabel", skyFrame)
+    skyLb.Size = UDim2.new(1,0,0,24)
+    skyLb.Text = "Custom Skybox (Image ID)"
+    skyLb.TextColor3 = Color3.fromRGB(200,200,200)
+    skyLb.BackgroundTransparency = 1
+    skyLb.Font = Enum.Font.GothamBold
+    skyLb.TextSize = 14
+    skyLb.TextXAlignment = Enum.TextXAlignment.Left
+
+    local skyBox = Instance.new("TextBox", skyFrame)
+    skyBox.Size = UDim2.new(1, 0, 0, 36)
+    skyBox.Position = UDim2.new(0,0,0,26)
+    skyBox.PlaceholderText = "Resim ID girin..."
+    skyBox.BackgroundColor3 = Color3.fromRGB(35,35,40)
+    skyBox.TextColor3 = Color3.fromRGB(240,240,240)
+    skyBox.Font = Enum.Font.Gotham
+    skyBox.TextSize = 14
+    Instance.new("UICorner", skyBox).CornerRadius = UDim.new(0,6)
+    
+    skyBox.FocusLost:Connect(function()
+        local text = skyBox.Text
+        local id = text
+        if text ~= "" then
+            task.spawn(function()
+                -- Check for Base64 Data URI
+                if text:find("data:image") and text:find("base64") then
+                    local success, err = pcall(function()
+                        local data = text:match("base64,(.+)")
+                        if not data then return end
+                        
+                        -- Attempt to find a base64 decoder in common executor environments
+                        local decode = nil
+                        if typeof(crypt) == "table" and crypt.base64decode then decode = crypt.base64decode
+                        elseif typeof(crypt) == "table" and crypt.base64 and crypt.base64.decode then decode = crypt.base64.decode
+                        elseif typeof(base64) == "table" and base64.decode then decode = base64.decode
+                        end
+                        
+                        -- If no decoder found, try standard 'DEC_B64' or similar if defined, else warn
+                        if not decode then 
+                            showNotify("Base64 Decoder bulunamadı (Executor desteklemiyor)")
+                            return 
+                        end
+                        
+                        local raw = decode(data)
+                        local fname = "ruon_sky_temp.jpg" -- default to jpg
+                        if text:find("image/png") then fname = "ruon_sky_temp.png" end
+                        
+                        if writefile and getcustomasset then
+                            writefile(fname, raw)
+                            id = getcustomasset(fname)
+                        else
+                            showNotify("writefile/getcustomasset bulunamadı")
+                        end
+                    end)
+                elseif tonumber(text) then 
+                    id = "rbxassetid://"..text 
+                end
+                
+                 local s = Lighting:FindFirstChildOfClass("Sky")
+                 if not s then
+                     s = Instance.new("Sky", Lighting)
+                 end
+                 s.SkyboxBk = id
+                 s.SkyboxDn = id
+                 s.SkyboxFt = id
+                 s.SkyboxLf = id
+                 s.SkyboxRt = id
+                 s.SkyboxUp = id
+                 showNotify("Skybox Güncellendi!")
+            end)
+        end
+    end)
+
+    -- Atmospheric Presets (Grid)
+    local presetLabel = Instance.new("TextLabel", scroll)
+    presetLabel.Size = UDim2.new(1,0,0,24)
+    presetLabel.Text = "Atmosphere Presets"
+    presetLabel.TextColor3 = Color3.fromRGB(200,200,200)
+    presetLabel.BackgroundTransparency = 1
+    presetLabel.Font = Enum.Font.GothamBold
+    presetLabel.TextSize = 14
+    
+    local presetContainer = Instance.new("Frame", scroll)
+    presetContainer.Size = UDim2.new(1, -10, 0, 100)
+    presetContainer.BackgroundTransparency = 1
+    
+    local pGrid = Instance.new("UIGridLayout", presetContainer)
+    pGrid.CellSize = UDim2.new(0,105,0,34)
+    pGrid.CellPadding = UDim2.new(0,8,0,8)
+    pGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+    local presets = {
+        {N="🌑 Mavi Gece", T=0, Amb=Color3.fromRGB(10,20,60), Fog=Color3.fromRGB(10,20,60)},
+        {N="🔥 Kızıl Cehennem", T=17.5, Amb=Color3.fromRGB(60,10,10), Fog=Color3.fromRGB(60,10,10)},
+        {N="🤢 Yeşil Zehir", T=14, Amb=Color3.fromRGB(20,50,20), Fog=Color3.fromRGB(20,50,20)},
+        {N="☀️ Güneşli", T=14, Amb=Color3.fromRGB(150,150,150), Fog=Color3.fromRGB(150,150,150)},
+        {N="🔮 Mor Sis", T=18, Amb=Color3.fromRGB(50,10,50), Fog=Color3.fromRGB(50,10,50)},
+    }
+
+    for _,p in ipairs(presets) do
+        local b = Instance.new("TextButton", presetContainer)
+        b.Text = p.N
+        b.BackgroundColor3 = p.Amb
+        b.TextColor3 = Color3.fromRGB(255,255,255)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 12
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+        
+        b.MouseButton1Click:Connect(function()
+            Lighting.ClockTime = p.T
+            Lighting.Ambient = p.Amb
+            Lighting.OutdoorAmbient = p.Amb
+            Lighting.FogColor = p.Fog
+            showNotify(p.N .. " Seçildi")
+        end)
+    end
+
 end
 
 -- =========================
@@ -1833,4 +1988,4 @@ do
     mkToggle(scroll, "Infinite Oxygen", infiniteOxygen, function() infiniteOxygen = not infiniteOxygen; return infiniteOxygen end)
 end
 
-print("[Ruon] Premium GUI injected — God Mode, Movement, ESP & Aim hazır.")
+
